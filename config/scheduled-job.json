@@ -1,20 +1,22 @@
 {
-  "brief": "Create an original, practical short conversation for US moms and parents about everyday life with babies and postpartum motherhood. Choose a fresh topic and angle each run, and vary topics across runs. Draw from a broad mix: newborn and baby care, feeding, safe sleep basics, soothing, routines, play, bonding, development and milestones, diapering, bathing, travel, postpartum recovery and wellbeing, realistic self-care, and asking for support. Keep content age-appropriate, cautious, evidence-aligned, and general. Do not diagnose, give individualized medical advice, or make unsupported health claims; suggest asking a pediatrician or qualified clinician when a personal health concern comes up. Use warm, natural American English. Include a brief safety reminder only when relevant.",
+  "brief": "Create an original, warm, practical short conversation for US couples about healthy relationships. Choose a fresh topic and angle each run, and vary topics across runs. Draw from a broad mix: green flags and healthy habits, communication and listening, small everyday moments of care, dating and keeping the spark alive, marriage and partnership, resolving disagreements kindly, supporting each other through stress, love languages, quality time, and growing together. Keep content wholesome, realistic, and shareable, in warm natural American English. Avoid toxic drama, blame, and stereotyping; do not encourage manipulation or control; keep it general, not individualized counseling.",
   "language": "en",
   "format": "shorts",
   "target_duration_seconds": 30,
-  "niche": "BABY & MOM US",
+  "niche": "RELATIONSHIPS US",
   "scene": "auto",
   "cast": [
     "sakuya",
-    "mei"
+    "kenji"
   ],
   "cast_pool": [
     "sakuya",
-    "mei",
-    "sari",
     "kenji",
+    "mei",
     "taro",
-    "bagas"
+    "sari",
+    "bagas",
+    "hana",
+    "daichi"
   ]
 }
