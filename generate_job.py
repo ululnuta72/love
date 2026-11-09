@@ -10,6 +10,28 @@ from universal import check
 
 ROOT = Path(__file__).resolve().parent
 
+def normalize_title(title):
+    """Lowercase + collapse whitespace/punctuation so 'The Power of Small Wins!' matches 'the power of small wins'."""
+    import re
+    import unicodedata
+    text = unicodedata.normalize("NFKD", title or "").lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return " ".join(text.split())
+
+
+def load_used_titles(path):
+    """Previously used video titles from a JSON file ({"titles": [...]}); a missing or corrupt file means no history yet."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if isinstance(data, dict):
+        data = data.get("titles", [])
+    if not isinstance(data, list):
+        return []
+    return [str(t).strip() for t in data if str(t).strip()]
+
+
 
 def parse_model_json(content):
     content = content.strip()
@@ -93,7 +115,7 @@ def append_contextual_cta(job):
     return check(job)
 
 
-def generate(brief, language, video_format, niche, scene, cast, output, target_duration_seconds=30, cast_pool=None):
+def generate(brief, language, video_format, niche, scene, cast, output, target_duration_seconds=30, cast_pool=None, used_titles=None):
     if not brief.strip() or len(brief) > 1200:
         raise ValueError("brief must be 1–1200 characters")
     if not isinstance(target_duration_seconds, int) or not 1 <= target_duration_seconds <= 600:
@@ -101,6 +123,8 @@ def generate(brief, language, video_format, niche, scene, cast, output, target_d
     cast = tuple(value.strip().lower() for value in cast)
     if len(cast) != 2 or cast[0] == cast[1] or not niche.strip() or len(niche) > 28:
         raise ValueError("choose two different characters and a niche label under 29 characters")
+    used = [t for t in (used_titles or []) if t.strip()]
+    used_norm = {normalize_title(t) for t in used}
     pool = None
     if cast_pool:
         from tinyvideo import F_VOICE, ROSTER
@@ -145,7 +169,22 @@ def generate(brief, language, video_format, niche, scene, cast, output, target_d
         "Set subtitles to srt. Avoid unsafe or unsupported claims; for medical, financial, "
         "or legal topics, keep advice general and include a brief qualified-professional caveat."
     )
-    raw = ask_model([{"role": "system", "content": system}, {"role": "user", "content": user}], schema(), min(6000, max(1400, word_target * 4)))
+    if used:
+        user += ("\nPreviously used video titles - do NOT reuse any of these, and do not reuse a title that only rewords one of them; "
+                 "choose a fresh, distinct title: " + "; ".join(used) + ".")
+    def _ask(extra=""):
+        return ask_model([{"role": "system", "content": system}, {"role": "user", "content": user + extra}],
+                         schema(), min(6000, max(1400, word_target * 4)))
+    raw = _ask()
+    for _ in range(2):
+        title = raw.get("title") if isinstance(raw, dict) else None
+        if not title or normalize_title(title) not in used_norm:
+            break
+        print(f"Title {title!r} was already used; asking the model for a different title")
+        raw = _ask(f"\nIMPORTANT: The title {title!r} has already been used for a previous video. Choose a completely different, distinct title.")
+    title = raw.get("title") if isinstance(raw, dict) else None
+    if title and normalize_title(title) in used_norm:
+        print(f"::warning::Title {title!r} duplicates a previously used title even after retry; keeping it so the run is not wasted")
     if pool:
         picked = raw.get("cast") if isinstance(raw, dict) else None
         if (not isinstance(picked, list) or len(picked) != 2 or picked[0] == picked[1]
@@ -242,6 +281,8 @@ if __name__ == "__main__":
     parser.add_argument("--scene", default="auto")
     parser.add_argument("--cast", nargs=2, default=("mika", "emi"))
     parser.add_argument("--cast-pool", nargs="+", default=None, help="character IDs the model may choose from for dynamic casting")
+    parser.add_argument("--used-titles", type=Path, default=ROOT / "config" / "used-titles.json",
+                        help="JSON file listing previously used video titles (default config/used-titles.json)")
     parser.add_argument("--target-duration-seconds", type=int, default=30)
     parser.add_argument("--output", default="job.json")
     args = parser.parse_args()
@@ -256,8 +297,8 @@ if __name__ == "__main__":
             config = load_config(args.config)
         except (OSError, json.JSONDecodeError, ValueError) as error:
             parser.error(f"{args.config}: {error}")
-        generate(config["brief"], config["language"], config["format"], config["niche"], config["scene"], config["cast"], args.output, config["target_duration_seconds"], cast_pool=config.get("cast_pool"))
+        generate(config["brief"], config["language"], config["format"], config["niche"], config["scene"], config["cast"], args.output, config["target_duration_seconds"], cast_pool=config.get("cast_pool"), used_titles=load_used_titles(args.used_titles))
     elif args.brief:
-        generate(args.brief, args.language, args.video_format, args.niche, args.scene, args.cast, args.output, args.target_duration_seconds, cast_pool=args.cast_pool)
+        generate(args.brief, args.language, args.video_format, args.niche, args.scene, args.cast, args.output, args.target_duration_seconds, cast_pool=args.cast_pool, used_titles=load_used_titles(args.used_titles))
     else:
         parser.error("provide --config or --brief")
