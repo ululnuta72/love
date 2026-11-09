@@ -1,6 +1,8 @@
 name: Universal video render
 on:
-  # Schedule disabled until the Instagram account is configured.
+  schedule:
+    - cron: '7 0,12 * * *'
+      timezone: Asia/Jakarta
   workflow_dispatch:
     inputs:
       job_b64:
@@ -65,6 +67,8 @@ jobs:
   render:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    permissions:
+      contents: write
     steps:
       - name: Check execution time
         run: |
@@ -189,6 +193,39 @@ jobs:
               break
             fi
           done
+      - name: Record used title
+        # Records the rendered video's title so later runs never reuse it.
+        # Never fails the job: a missed record only weakens the guard.
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          try:
+              job = json.loads(Path('job.json').read_text(encoding='utf-8'))
+              path = Path('config/used-titles.json')
+              try:
+                  data = json.loads(path.read_text(encoding='utf-8'))
+                  titles = data.get('titles', []) if isinstance(data, dict) else []
+              except (OSError, ValueError):
+                  titles = []
+              title = str(job.get('title', '')).strip()
+              if title and title not in titles:
+                  titles.append(title)
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(json.dumps({'titles': titles[-50:]}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+              print(f"Recorded title: {title}")
+          except Exception as error:
+              print(f"::warning::Could not record used title: {error}")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/used-titles.json
+          if git diff --cached --quiet; then
+            echo "No new title to record."
+          else
+            git commit -m "Record used video title" && git push || echo "::warning::Could not push used-titles update"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: universal-video-${{ github.run_id }}
