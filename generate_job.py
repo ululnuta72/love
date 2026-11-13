@@ -104,6 +104,13 @@ def ask_model(messages, output_schema, max_tokens):
                 time.sleep(wait)
                 continue
             raise RuntimeError(f"Chat API {error.code}: {body}") from error
+        except (TimeoutError, urllib.error.URLError) as error:
+            if attempt < 3:
+                wait = 30 * (attempt + 1)
+                print(f"Chat API timeout/network error ({error}); retrying in {wait}s (attempt {attempt + 2} of 4)")
+                time.sleep(wait)
+                continue
+            raise RuntimeError(f"Chat API request failed after 4 attempts: {error}") from error
 
 
 def schema():
