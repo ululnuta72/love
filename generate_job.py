@@ -31,6 +31,20 @@ def load_used_titles(path):
         return []
     return [str(t).strip() for t in data if str(t).strip()]
 
+def sanitize_job(raw):
+    """Drop fields the job validator rejects (e.g. a $schema key echoed from the prompt) instead of failing the run."""
+    if not isinstance(raw, dict):
+        return raw
+    allowed = {"title", "niche", "language", "format", "target_duration_seconds", "scene", "cast", "lines", "subtitles"}
+    dropped = sorted(set(raw) - allowed)
+    job = {k: v for k, v in raw.items() if k in allowed}
+    if isinstance(job.get("lines"), list):
+        job["lines"] = [{k: v for k, v in line.items() if k in {"speaker", "text", "translation"}} if isinstance(line, dict) else line for line in job["lines"]]
+    if dropped:
+        print(f"Dropped unexpected job fields from model output: {', '.join(dropped)}")
+    return job
+
+
 
 
 def parse_model_json(content):
@@ -52,7 +66,8 @@ def ask_model(messages, output_schema, max_tokens):
     token = os.environ.get("OPENAI_API_KEY")
     if not token:
         raise ValueError("Set OPENAI_API_KEY in the environment")
-    messages = [dict(messages[0], content=messages[0]["content"] + "\nReturn JSON matching this schema exactly:\n" + json.dumps(output_schema)), *messages[1:]]
+    shown_schema = {k: v for k, v in output_schema.items() if k not in ("$schema", "title")}
+    messages = [dict(messages[0], content=messages[0]["content"] + "\nReturn JSON matching this schema exactly:\n" + json.dumps(shown_schema)), *messages[1:]]
     payload = {
         "model": os.environ.get("OPENAI_MODEL", "gemma4:cloud"),
         "max_tokens": max_tokens,
@@ -193,7 +208,7 @@ def generate(brief, language, video_format, niche, scene, cast, output, target_d
             raw["cast"] = list(cast)
         else:
             raw["cast"] = [p.strip().lower() for p in picked]
-    job = check(raw)
+    job = check(sanitize_job(raw))
     expected = {"language": language, "format": video_format, "niche": niche}
     if not pool:
         expected["cast"] = list(cast)
@@ -230,10 +245,10 @@ def revise_for_duration(job_path, actual_duration_seconds):
         + json.dumps(job, ensure_ascii=False)
     )
     try:
-        revised = check(ask_model(
+        revised = check(sanitize_job(ask_model(
             [{"role": "system", "content": "Revise the existing illustrated-video dialogue to fit its target duration. Return only schema-valid JSON."}, {"role": "user", "content": prompt}],
             schema(), min(6000, max(1400, desired_words * 4)),
-        ))
+        )))
     except Exception as error:
         print(f"Could not adjust dialogue; keeping the current job: {error}")
         return
