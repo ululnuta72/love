@@ -20,6 +20,15 @@ def normalize_title(title):
     return " ".join(text.split())
 
 
+def _same_setting(received, expected):
+    """Case-insensitive comparison for echoed settings: the model may return
+    'Relationships US' where 'RELATIONSHIPS US' was requested; that is the
+    same setting, not a change. Non-strings compare exactly."""
+    if isinstance(received, str) and isinstance(expected, str):
+        return received.strip().lower() == expected.strip().lower()
+    return received == expected
+
+
 def load_used_titles(path):
     """Previously used video titles from a JSON file ({"titles": [...]}); a missing or corrupt file means no history yet."""
     try:
@@ -230,9 +239,11 @@ def generate(brief, language, video_format, niche, scene, cast, output, target_d
     if scene != "auto":
         expected["scene"] = scene
     mismatches = {key: {"expected": value, "received": job.get(key)}
-                  for key, value in expected.items() if job.get(key) != value}
+                  for key, value in expected.items() if not _same_setting(job.get(key), value)}
     if mismatches:
         raise ValueError(f"Model changed requested settings: {json.dumps(mismatches, ensure_ascii=False)}")
+    for key, value in expected.items():
+        job[key] = value  # coerce echoed settings (e.g. niche casing) to the requested values
     job["target_duration_seconds"] = target_duration_seconds
     append_contextual_cta(job)
     output = Path(output)
@@ -268,8 +279,10 @@ def revise_for_duration(job_path, actual_duration_seconds):
         print(f"Could not adjust dialogue; keeping the current job: {error}")
         return
     for key in ("title", "niche", "language", "format", "scene", "cast", "subtitles"):
-        if revised.get(key, "srt" if key == "subtitles" else None) != job.get(key, "srt" if key == "subtitles" else None):
+        if not _same_setting(revised.get(key, "srt" if key == "subtitles" else None),
+                             job.get(key, "srt" if key == "subtitles" else None)):
             raise ValueError(f"Gemma changed {key} while adjusting duration")
+        revised[key] = job.get(key, "srt" if key == "subtitles" else None)
     revised["target_duration_seconds"] = target
     revised["lines"] = [line for line in revised["lines"] if line["text"].strip() != final_line["text"].strip()]
     revised["lines"].append(final_line)
