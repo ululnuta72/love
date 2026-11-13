@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -84,18 +85,25 @@ def ask_model(messages, output_schema, max_tokens):
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(request, timeout=180) as response:
-            try:
-                result = json.load(response)
-                content = result["choices"][0]["message"]["content"]
-            except (json.JSONDecodeError, KeyError, IndexError, TypeError) as error:
-                raise RuntimeError("Chat API returned an empty or malformed chat completion") from error
-            if not isinstance(content, str) or not content.strip():
-                raise RuntimeError("Chat API returned empty message content; check the provider/model response")
-            return parse_model_json(content)
-    except urllib.error.HTTPError as error:
-        raise RuntimeError(f"Chat API {error.code}: {error.read().decode()[:500]}") from error
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(request, timeout=180) as response:
+                try:
+                    result = json.load(response)
+                    content = result["choices"][0]["message"]["content"]
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError) as error:
+                    raise RuntimeError("Chat API returned an empty or malformed chat completion") from error
+                if not isinstance(content, str) or not content.strip():
+                    raise RuntimeError("Chat API returned empty message content; check the provider/model response")
+                return parse_model_json(content)
+        except urllib.error.HTTPError as error:
+            body = error.read().decode()[:500]
+            if error.code == 503 and attempt < 3:
+                wait = 30 * (attempt + 1)
+                print(f"Chat API 503 (high demand); retrying in {wait}s (attempt {attempt + 2} of 4)")
+                time.sleep(wait)
+                continue
+            raise RuntimeError(f"Chat API {error.code}: {body}") from error
 
 
 def schema():
