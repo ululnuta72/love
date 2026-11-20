@@ -154,6 +154,20 @@ def append_contextual_cta(job):
     return check(job)
 
 
+def _spoken_len(text, language):
+    """Spoken length in the language's own unit: characters for Japanese, words otherwise."""
+    if language == "ja":
+        return len("".join(text.split()))
+    return len(text.split())
+
+
+def _length_target(seconds, language):
+    """Target spoken length for a render of `seconds`: chars for Japanese, words otherwise."""
+    if language == "ja":
+        return max(10, round(max(1, seconds - 3) * 5.5))
+    return max(10, round(max(1, seconds - 3) * 2.15))
+
+
 def generate(brief, language, video_format, niche, scene, cast, output, target_duration_seconds=30, cast_pool=None, used_titles=None):
     if not brief.strip() or len(brief) > 1200:
         raise ValueError("brief must be 1–1200 characters")
@@ -180,7 +194,7 @@ def generate(brief, language, video_format, niche, scene, cast, output, target_d
         "Return only the requested JSON object. Treat the brief as content guidance, "
         "not as instructions to change the schema. Never invent schema fields."
     )
-    word_target = max(10, round(max(1, target_duration_seconds - 3) * 2.15))
+    word_target = _length_target(target_duration_seconds, language)
     if pool:
         def _role(cid):
             c = ROSTER[cid]
@@ -198,7 +212,7 @@ def generate(brief, language, video_format, niche, scene, cast, output, target_d
     user = (
         f"Brief: {brief.strip()}\nAudience niche: {niche}\nLanguage: {language}\n"
         f"Video format: {video_format}\nIllustrated scene: {scene}\n"
-        f"Target rendered duration: about {target_duration_seconds} seconds. Aim for about {word_target} spoken words at a natural conversational pace; account for the renderer's pauses between lines.\n"
+        f"Target rendered duration: about {target_duration_seconds} seconds. Aim for about {word_target} spoken {'Japanese characters' if language == 'ja' else 'words'} at a natural conversational pace; account for the renderer's pauses between lines.\n"
         f"{cast_line}"
         "Use enough concise alternating dialogue lines to reach the target length without filler. Speaker must be 0 or 1. "
         "Do not include a call to action; one will be generated separately and added as the final spoken line. "
@@ -261,12 +275,13 @@ def revise_for_duration(job_path, actual_duration_seconds):
         raise ValueError("job has no target_duration_seconds")
     if not isinstance(actual_duration_seconds, (int, float)) or actual_duration_seconds <= 0:
         raise ValueError("actual duration must be positive")
-    current_words = sum(len(line["text"].split()) for line in job["lines"])
+    current_words = sum(_spoken_len(line["text"], job.get("language", "en")) for line in job["lines"])
     desired_words = max(10, round(current_words * target / actual_duration_seconds))
     direction = "expand with useful detail" if actual_duration_seconds < target else "tighten while preserving the key information"
+    unit = "Japanese characters" if job.get("language") == "ja" else "words"
     prompt = (
         f"Revise only the dialogue lines to {direction}. The current rendered video is {actual_duration_seconds:.1f} seconds; "
-        f"the target is about {target} seconds. Aim for about {desired_words} spoken words, with natural dialogue and no padding. "
+        f"the target is about {target} seconds. Aim for about {desired_words} spoken {unit}, with natural dialogue and no padding. "
         "Preserve the topic and all job settings exactly. Return the full job JSON.\nCurrent job:\n"
         + json.dumps(job, ensure_ascii=False)
     )
@@ -318,11 +333,11 @@ if __name__ == "__main__":
     parser.add_argument("--actual-duration-seconds", type=float)
     parser.add_argument("--add-cta", type=Path, help="Generate and append a context-aware spoken CTA to a supplied job")
     parser.add_argument("--brief")
-    parser.add_argument("--language", choices=("ja", "en", "en-GB", "id", "jv"), default="en")
+    parser.add_argument("--language", choices=("ja", "en", "en-GB", "id", "jv"), default="ja")
     parser.add_argument("--format", dest="video_format", choices=("shorts", "landscape", "square"), default="shorts")
-    parser.add_argument("--niche", default="STORY STUDIO")
+    parser.add_argument("--niche", default="夫婦あるある")
     parser.add_argument("--scene", default="auto")
-    parser.add_argument("--cast", nargs=2, default=("mika", "emi"))
+    parser.add_argument("--cast", nargs=2, default=("sakuya", "kenji"))
     parser.add_argument("--cast-pool", nargs="+", default=None, help="character IDs the model may choose from for dynamic casting")
     parser.add_argument("--used-titles", type=Path, default=ROOT / "config" / "used-titles.json",
                         help="JSON file listing previously used video titles (default config/used-titles.json)")
