@@ -1,9 +1,10 @@
 name: Universal video render
 on:
-  schedule:
-    # 07:07 + 19:07 WIB = 09:07 + 21:07 JST (Japan morning + evening peak)
-    - cron: '7 7,19 * * *'
-      timezone: Asia/Jakarta
+  # Schedule paused by Adv on 2026-11-27. Re-enable by uncommenting the schedule block below.
+  # schedule:
+  #   # 07:07 + 19:07 WIB = 09:07 + 21:07 JST (Japan morning + evening peak)
+  #   - cron: '7 7,19 * * *'
+  #     timezone: Asia/Jakarta
   workflow_dispatch:
     inputs:
       job_b64:
